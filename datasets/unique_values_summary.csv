@@ -1,0 +1,11 @@
+Damage_Type,Formation,Fluid_Type,Completion_Type
+corrosion cracking,dolomite,oil-based,openhole
+filtration problem,mixed,acid,casedhole
+clay & iron,shale,water-based,liner
+emulsion,sandstone,mud,perforated
+drilling damage,carbonate,brine,
+ultra-clean fluid,,,
+completion issue,,,
+fluid incompatibility,,,
+rock/fluid interaction,,,
+fluid loss,,,
