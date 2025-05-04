@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 # Number of records
-num_samples = 1_000_000
+num_samples = 10_000_000
 
 # Categories and ranges
 damage_types = [
@@ -45,3 +45,4 @@ df = pd.DataFrame(data)
 df.to_csv("formation_damage_dataset.csv", index=False)
 
 print("✅ Dataset generated and saved as 'formation_damage_dataset.csv'")
+
