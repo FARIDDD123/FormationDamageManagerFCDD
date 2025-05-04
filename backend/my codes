@@ -1,0 +1,80 @@
+import sys
+print(sys.executable)
+print(sys.path)
+import dash
+from dash import dcc, html
+import plotly.express as px
+import pandas as pd
+
+app = dash.Dash(__name__)
+
+# نمونه داده
+df = pd.DataFrame({
+    "Damage Type": ["Clay/Iron", "Drilling", "Fluid Loss", "Incompatibility"],
+    "Occurrences": [12, 19, 8, 15],
+    "Severity": [3.2, 4.1, 2.8, 3.9]
+})
+
+app.layout = html.Div([
+    html.H1("Formation Damage Monitoring Dashboard"),
+    
+    dcc.Tabs([
+        dcc.Tab(label='Damage Overview', children=[
+            dcc.Graph(
+                figure=px.bar(df, x="Damage Type", y="Occurrences", 
+                             title="Damage Occurrences")
+            ),
+            dcc.Graph(
+                figure=px.pie(df, values="Occurrences", names="Damage Type",
+                             title="Damage Distribution")
+            )
+        ]),
+        
+        dcc.Tab(label='Real-time Monitoring', children=[
+            html.Div([
+                html.H3("Real-time Parameters"),
+                dcc.Graph(id='real-time-graph'),
+                dcc.Interval(
+                    id='interval-component',
+                    interval=1*1000, # در هر ثانیه آپدیت می‌شود
+                    n_intervals=0
+                )
+            ])
+        ]),
+        
+        dcc.Tab(label='Damage Prediction', children=[
+            html.Div([
+                html.H3("Predict Damage Risk"),
+                dcc.Dropdown(
+                    id='damage-type-dropdown',
+                    options=[
+                        {'label': 'Clay/Iron Control', 'value': 'clay_iron'},
+                        {'label': 'Drilling Damage', 'value': 'drilling'},
+                        # سایر گزینه‌ها...
+                    ],
+                    value='clay_iron'
+                ),
+                # سایر المان‌های ورودی...
+                html.Button('Predict', id='predict-button'),
+                html.Div(id='prediction-output')
+            ])
+        ])
+    ])
+])
+
+@app.callback(
+    Output('prediction-output', 'children'),
+    [Input('predict-button', 'n_clicks')],
+    # سایر ورودی‌ها...
+)
+def update_prediction(n_clicks):
+    # اینجا تابع پیش‌بینی را فراخوانی کنید
+    return f"Prediction result for selected parameters"
+    
+if __name__ == '__main__':
+    app.run_server(debug=True)
+    from dash import Dash, dcc, html, Input, Output  # اضافه کردن Input و Output
+import plotly.express as px
+import pandas as pd
+
+# بقیه کدهای شما...
