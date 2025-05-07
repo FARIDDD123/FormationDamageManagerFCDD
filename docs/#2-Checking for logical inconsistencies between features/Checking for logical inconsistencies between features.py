@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the data from local file
-df = pd.read_parquet("/content/drive/MyDrive/Colab Notebooks/formation_damage_cleaned/formation_damage_cleaned.parquet")
+df = pd.read_parquet("formation_damage_cleaned.parquet")
 
 # Define invalid combinations using vectorized conditions
 cond1 = (df['Formation'] == 'Shale') & (df['Fluid_Type'] == 'Acidic') & (df['Completion_Type'] == 'Open Hole')
