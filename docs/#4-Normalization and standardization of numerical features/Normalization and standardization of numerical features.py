@@ -5,7 +5,7 @@ import pickle
 import json
 
 # بارگذاری داده‌های پیش‌پردازش شده
-df = pd.read_parquet("/content/formation_damage_imputed.parquet")
+df = pd.read_parquet("formation_damage_imputed.parquet")
 
 # شناسایی ستون‌های عددی
 numerical_cols = df.select_dtypes(include=['float64', 'int64']).columns

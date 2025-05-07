@@ -6,7 +6,7 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import cross_val_score
 
 # 1. بارگذاری و پیش‌پردازش داده‌ها
-df = pd.read_parquet("formation_damage_cleaned.parquet")
+df = pd.read_parquet("formation_damage_valid_data.parquet")
 
 # کد موجود برای حذف ترکیبات نامعتبر
 cond1 = (df['Formation'] == 'Shale') & (df['Fluid_Type'] == 'Acidic') & (df['Completion_Type'] == 'Open Hole')
