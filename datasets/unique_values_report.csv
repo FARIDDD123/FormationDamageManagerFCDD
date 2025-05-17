@@ -1,0 +1,32 @@
+Column: Damage_Type
+clay & iron
+completion issue
+corrosion cracking
+drilling damage
+emulsion
+filtration problem
+fluid incompatibility
+fluid loss
+rock/fluid interaction
+ultra-clean fluid
+
+Column: Formation
+carbonate
+dolomite
+mixed
+sandstone
+shale
+
+Column: Fluid_Type
+acidizing
+brine
+mud
+oil-based
+water-based
+
+Column: Completion_Type
+cased hole
+liner
+open hole
+perforated
+

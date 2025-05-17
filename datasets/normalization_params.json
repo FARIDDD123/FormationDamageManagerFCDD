@@ -1,0 +1,37 @@
+{
+    "Temperature_C": {
+        "method": "minmax",
+        "min": 50.00721740722656,
+        "max": 399.5278625488281
+    },
+    "Pressure_psi": {
+        "method": "minmax",
+        "min": 1000.0775146484375,
+        "max": 29974.548828125
+    },
+    "pH": {
+        "method": "minmax",
+        "min": 0.516514241695404,
+        "max": 8.999846458435059
+    },
+    "Salinity_ppm": {
+        "method": "minmax",
+        "min": NaN,
+        "max": NaN
+    },
+    "Flow_Rate_bbl_day": {
+        "method": "minmax",
+        "min": 10.069835662841797,
+        "max": 9975.4072265625
+    },
+    "Permeability_mD": {
+        "method": "minmax",
+        "min": 0.07500433176755905,
+        "max": 4996.05029296875
+    },
+    "Porosity_pct": {
+        "method": "minmax",
+        "min": 0.011376023292541504,
+        "max": 34.99601745605469
+    }
+}
