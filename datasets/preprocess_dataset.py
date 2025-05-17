@@ -7,18 +7,19 @@ Original file is located at
     https://colab.research.google.com/drive/119XgobXuZc1ellToLn0P8iDu0No0VOeY
 """
 
-from google.colab import drive
-drive.mount('/content/mydrive')
+#from google.colab import drive
+#drive.mount('/content/mydrive')
 
-!pip install pandas pyarrow
-!pip install pandas fastparquet
+#!pip install pandas pyarrow
+#!pip install pandas fastparquet
 
 import pandas as pd
-
+import numpy as np
+from scipy.stats import zscore
 # -------------------------------
 # 1. خواندن فایل Parquet
 # -------------------------------
-file_path = '//content//mydrive//MyDrive//Colab Notebooks//formation_damage_optimized.parquet'  # نام فایل ورودی
+file_path = 'formation_damage_optimized.parquet'  # نام فایل ورودی
 df = pd.read_parquet(file_path)
 
 # -------------------------------
@@ -87,6 +88,36 @@ with open(output_file, 'w', encoding='utf-8') as f:
         f.write("\n")
 
 print(f"✅ مقادیر یکتا در فایل '{output_file}' ذخیره شدند.")
+
+columns_to_check = ['Temperature_C', 'Pressure_psi', 'Permeability_mD', 'Flow_Rate_bbl_day']  # به دلخواه تغییر بده
+
+# 3. روش IQR
+def detect_outliers_iqr(df, columns):
+    outliers = pd.DataFrame()
+    for col in columns:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        outlier_rows = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+        outliers = pd.concat([outliers, outlier_rows])
+    return outliers.drop_duplicates()
+
+def detect_outliers_zscore(df, columns, threshold=3):
+    z_scores = np.abs(zscore(df[columns]))
+    outliers = df[(z_scores > threshold).any(axis=1)]
+    return outliers.drop_duplicates()
+
+iqr_outliers = detect_outliers_iqr(df, columns_to_check)
+zscore_outliers = detect_outliers_zscore(df, columns_to_check)
+
+all_outliers = pd.concat([iqr_outliers, zscore_outliers]).drop_duplicates()
+
+clean_data = df.drop(all_outliers.index)
+
+all_outliers.to_csv('outliers.csv', index=False)
+clean_data.to_csv('clean_data.csv', index=False)
 
 # -------------------------------
 # 9. (اختیاری) ذخیره دیتافریم پاک‌شده در فایل parquet جدید
