@@ -18,7 +18,7 @@ import numpy as np
 # -------------------------------
 # 1. خواندن فایل Parquet
 # -------------------------------
-file_path = './datasets/formation_damage_optimized.parquet'  # نام فایل ورودی
+file_path = './datasets/formation_damage_dataset.parquet'  # نام فایل ورودی
 df = pd.read_parquet(file_path)
 
 # -------------------------------
