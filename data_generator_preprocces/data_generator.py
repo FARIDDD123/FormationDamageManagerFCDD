@@ -152,5 +152,5 @@ for col in numeric_cols:
     df[col] = df[col].astype(np.float32)
 
 # ذخیره به فایل پارکت
-df.to_parquet("formation_damage_dataset_with_variance.parquet", index=False)
+df.to_parquet("./datasets/formation_damage_dataset_with_variance.parquet", index=False)
 print("✅ فایل formation_damage_dataset_with_variance.parquet با واریانس اضافه شده ذخیره شد.")
