@@ -7,7 +7,11 @@ from sklearn.preprocessing import StandardScaler
 file_path = './datasets/text_corrected_data.parquet'  # نام فایل ورودی
 df = pd.read_parquet(file_path)
 
-columns_to_check = ['Temperature_C', 'Pressure_psi', 'Permeability_mD', 'Flow_Rate_bbl_day']  # به دلخواه تغییر بده
+columns_to_check = ['depth', 'porosity', 'permeability', 'pressure', 'temperature', 
+                'clay_content', 'illite_content', 'kaolinite_content', 'iron_content',
+                'quartz_content', 'calcite_content', 'mud_weight', 'mud_viscosity', 
+                'yp', 'gel_strength', 'ph', 'salinity', 'lime_content', 'rop', 'wob', 
+                'rpm', 'flow_rate', 'ecd', 'overbalance', 'perforation_density']  # به دلخواه تغییر بده
 
 # روش IQR
 def detect_outliers_iqr(df, columns):
