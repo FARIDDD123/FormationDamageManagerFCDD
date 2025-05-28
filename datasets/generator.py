@@ -1,130 +1,233 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+import pyarrow.parquet as pq
+import pyarrow as pa
 
 np.random.seed(42)
 
-n_wells = 10
-n_rows_per_well = 15_552_000
-chunk_size = 1_000_000
-start_time = pd.Timestamp("2023-01-01")
-
-wells = [
-    {"API_Well_ID": "40100050", "LONG": -94.86, "LAT": 32.26},
-    {"API_Well_ID": "40131881", "LONG": -94.82, "LAT": 32.26},
-    {"API_Well_ID": "40134068", "LONG": -94.78, "LAT": 32.25},
-    {"API_Well_ID": "40181715", "LONG": -94.95, "LAT": 32.17},
-    {"API_Well_ID": "36535068", "LONG": -94.18, "LAT": 32.32},
-    {"API_Well_ID": "36500362", "LONG": -94.13, "LAT": 32.32},
-    {"API_Well_ID": "36530944", "LONG": -94.15, "LAT": 32.12},
-    {"API_Well_ID": "18332094", "LONG": -94.62, "LAT": 32.37},
-    {"API_Well_ID": "18331921", "LONG": -94.6, "LAT": 32.37},
-    {"API_Well_ID": "18387931", "LONG": -94.86, "LAT": 32.45}
+# پیکربندی
+records_per_well = 15_552_000
+chunk_size = 1_000_000  
+wells_info = [
+    (40100050, -94.86, 32.26),
+    (40131881, -94.82, 32.26),
+    (40134068, -94.78, 32.25),
+    (40181715, -94.95, 32.17),
+    (36535068, -94.18, 32.32),
+    (36500362, -94.13, 32.32),
+    (36530944, -94.15, 32.12),
+    (18332094, -94.62, 32.37),
+    (18331921, -94.6, 32.37),
+    (18387931, -94.86, 32.45)
 ]
 
-formation_types = ['Sandstone', 'Limestone', 'Shale', 'Dolomite']
-clay_types = ['Kaolinite', 'Illite', 'Smectite', 'Mixed Layer']
-mud_types = ['Water-Based', 'Oil-Based', 'Synthetic-Based']
-presence_of_fractures = ['Yes', 'No']
+start_date = datetime(2023, 1, 1)
 
-clip = lambda x, low, high: np.clip(x, low, high)
+formations = ['Shale', 'Limestone', 'Sandstone']
+clay_types = ['Kaolinite', 'Illite', 'Montmorillonite']
+completion_types = ['Cased', 'Open Hole', 'Liner']
+mud_types = ['Water-based', 'Oil-based', 'Synthetic']
 
-for well_id in range(n_wells):
-    well = wells[well_id]
-    well_api = well['API_Well_ID']
-    well_long = well['LONG']
-    well_lat = well['LAT']
+fracture_prob = {'Shale': 0.2, 'Limestone': 0.6, 'Sandstone': 0.4}
+temp_base = {'Shale': 70, 'Limestone': 90, 'Sandstone': 85}
+perm_base = {'Shale': 5, 'Limestone': 150, 'Sandstone': 80}
+clay_base = {'Kaolinite': 15, 'Illite': 25, 'Montmorillonite': 40}
+density_perforation_map = {'Cased': 30, 'Open Hole': 10, 'Liner': 20}
+wob_map = {'Drilling': 5000, 'Completion': 2000, 'Production': 0}
 
-    filename = f"formation_damage_well_{well_id+1}.parquet"
-    first_chunk = True
+def phase_operation(day):
+    if day < 100:
+        return 'Drilling'
+    elif day < 200:
+        return 'Completion'
+    return 'Production'
 
-    for chunk_start in range(0, n_rows_per_well, chunk_size):
-        chunk_end = min(chunk_start + chunk_size, n_rows_per_well)
-        chunk_len = chunk_end - chunk_start
+def calc_damage(prob_base, clay, loss_fluid, fractures, api_loss):
+    score = prob_base
+    if clay > 30:
+        score += 0.2
+    if loss_fluid > 1.0:
+        score += 0.3
+    if fractures == 1:
+        score += 0.1
+    if api_loss > 0.6:
+        score += 0.2
+    return min(score, 0.95)
 
-        time_deltas = pd.to_timedelta(np.arange(chunk_start, chunk_end), unit='s')
-        df = pd.DataFrame({
-            'API_Well_ID': well_api,
-            'DateTime': start_time + time_deltas,
-            'LAT': well_lat,
-            'LONG': well_long,
-            'Measured_Depth': np.linspace(5000, 12000, n_rows_per_well)[chunk_start:chunk_end] + np.random.normal(0, 10, chunk_len),
-            'Bit_Depth': np.linspace(5000, 12000, n_rows_per_well)[chunk_start:chunk_end] + np.random.normal(0, 10, chunk_len),
-            'WOB': clip(np.random.normal(25, 5, chunk_len), 10, 50),
-            'RPM': clip(np.random.normal(120, 20, chunk_len), 60, 200),
-            'ROP': clip(np.random.normal(45, 15, chunk_len), 10, 100),
-            'Torque': clip(np.random.normal(900, 100, chunk_len), 600, 1200),
-            'Standpipe_Pressure': clip(np.random.normal(3000, 300, chunk_len), 2000, 4000),
-            'Annulus_Pressure': clip(np.random.normal(2500, 250, chunk_len), 1500, 3500),
-            'Reservoir_Pressure': clip(np.random.normal(4500, 300, chunk_len), 3000, 6000),
-            'Pore_Pressure_psi': clip(np.random.normal(4000, 300, chunk_len), 2500, 5500),
-            'Overbalance': np.nan,
-            'Formation_Type': np.random.choice(formation_types, chunk_len),
-            'Formation_Permeability': clip(np.random.lognormal(mean=2, sigma=0.8, size=chunk_len), 0.1, 1000),
-            'Reservoir_Temperature': clip(np.random.normal(100, 10, chunk_len), 70, 150),
-            'Clay_Content_Percent': clip(np.random.normal(20, 10, chunk_len), 0, 50),
-            'Clay_Mineralogy_Type': np.random.choice(clay_types, chunk_len),
-            'Shale_Reactiveness': clip(np.random.normal(0.5, 0.2, chunk_len), 0, 1),
-            'Presence_of_Fractures': np.random.choice(presence_of_fractures, chunk_len),
-            'Mud_Type': np.random.choice(mud_types, chunk_len),
-            'Mud_pH': clip(np.random.normal(8.5, 0.5, chunk_len), 7.0, 10.5),
-            'Mud_Weight_In': clip(np.random.normal(9.5, 1, chunk_len), 8.0, 12.5),
-            'Mud_Flow_Rate_In': clip(np.random.normal(500, 100, chunk_len), 300, 800),
-            'Mud_Flow_Rate_Out': clip(np.random.normal(495, 100, chunk_len), 290, 800),
-            'Mud_Temperature_In': clip(np.random.normal(75, 5, chunk_len), 60, 90),
-            'Mud_Temperature_Out': clip(np.random.normal(85, 5, chunk_len), 70, 100),
-            'Chloride_Content': clip(np.random.normal(18000, 2000, chunk_len), 10000, 25000),
-            'Solid_Content': clip(np.random.normal(5, 2, chunk_len), 0, 15),
-            'Oil_Water_Ratio': clip(np.random.normal(70, 10, chunk_len), 50, 90),
-            'Pit_Volume': clip(np.random.normal(800, 50, chunk_len), 700, 900),
-            'Viscosity': clip(np.random.normal(35, 10, chunk_len), 20, 60),
-            'Fluid_Loss_API': clip(np.random.normal(6, 3, chunk_len), 2, 15),
-            'Young_Modulus_GPa': clip(np.random.normal(25, 5, chunk_len), 10, 40),
-            'Poisson_Ratio': clip(np.random.normal(0.25, 0.05, chunk_len), 0.1, 0.4),
-            'Brittleness_Index': clip(np.random.normal(0.5, 0.15, chunk_len), 0, 1),
-            'Formation_Damage_Index': np.nan,
-            'Clay_Damage_Index': np.nan,
-            'Emulsion_Risk_Index': np.nan,
-            'Fluid_Loss_Risk_Index': np.nan,
-            'Rock_Fluid_Interaction_Risk_Index': np.nan
-        })
+def determine_damage_type(row):
+    if row['Clay_Content_Percent'] > 35 and row['Clay_Mineralogy_Type'] == "Montmorillonite":
+        return "Clay & Iron Control"
+    if row['Formation_Type'] == "Shale" and row['Fluid_Loss_API'] > 0.8:  # قبلاً 1.2 بود
+        return "Drilling-Induced Damage"
+    if row['Fluid_Loss_API'] > 1.0 and row['Mud_Type'] == "Water-based":  # قبلاً 1.5 بود
+        return "Fluid Loss"
+    if row['Chloride_Content'] > 500 and row['Solid_Content'] > 10:  # قبلاً 600 و 12 بود
+        return "Scale / Sludge Incompatibility"
+    if row['Completion_Type'] == "Open Hole" and row['Mud_pH'] < 7.0:  # قبلاً 6.5 بود
+        return "Near-Wellbore Emulsions"
+    if row['Formation_Permeability'] < 30 and row['Reservoir_Temperature'] > 85:  # قبلاً <20 و >90
+        return "Rock/Fluid Interaction"
+    if row['Completion_Type'] == "Cased" and row['Overbalance'] > 100:  # قبلاً >120
+        return "Completion Damage"
+    if row['Reservoir_Temperature'] > 95 and row['Mud_Weight_In'] > 9.5:  # قبلاً >100 و >10
+        return "Stress/Corrosion Cracking"
+    if row['Viscosity'] > 18 and row['Mud_Type'] == "Oil-based":  # قبلاً >20
+        return "Surface Filtration"
+    if row['Viscosity'] < 12 and row['Mud_Type'] == "Synthetic":  # قبلاً <10
+        return "Ultra-Clean Fluids Control"
+    return "Generic Damage"
 
-        df['Standpipe_Pressure'] += 0.1 * df['ROP']
-        df['Mud_Temperature_In'] += 0.05 * df['ROP']
-        df['Mud_Temperature_Out'] += 0.07 * df['RPM']
-        df['Pore_Pressure_psi'] += 0.05 * df['WOB']
-        df['Overbalance'] = df['Standpipe_Pressure'] - df['Pore_Pressure_psi']
+def generate_data_for_well(well_id, long_val, lat_val, records, start_record_id=0):
+    ID_Well_API = np.array([well_id]*records)
+    LONG = long_val + np.random.randn(records)*0.001
+    LAT = lat_val + np.random.randn(records)*0.001
+    
+    ID_Record = np.arange(start_record_id, start_record_id + records)
+    DateTime = np.array([start_date + timedelta(seconds=i) for i in range(records)])
+    Days_Age_Well = ((DateTime - start_date).astype('timedelta64[s]').astype(int) // 86400)
+    
+    Phase_Operation = np.array([phase_operation(d) for d in Days_Age_Well])
+    Type_Formation = np.random.choice(formations, size=records, p=[0.4, 0.3, 0.3])
+    Type_Mineralogy_Clay = np.random.choice(clay_types, size=records)
+    Fractures_of_Presence = np.array([np.random.binomial(1, fracture_prob[t]) for t in Type_Formation])
+    
+    Temperature_Reservoir = np.array([temp_base[t] + np.random.randn()*2 for t in Type_Formation])
+    Permeability_Formation = np.array([perm_base[t] + np.random.randn()*5 for t in Type_Formation])
+    Percent_Content_Clay = np.array([clay_base[t] + np.random.randn()*3 for t in Type_Mineralogy_Clay])
+    
+    Type_Completion = np.random.choice(completion_types, size=records)
+    Density_Perforation = np.array([density_perforation_map[t] + np.random.randn()*2 for t in Type_Completion])
+    
+    Depth_Measured = Days_Age_Well * 5 + np.random.randn(records)*10 + 500
+    Depth_Bit = Depth_Measured - (np.random.rand(records)*10)
+    
+    WOB = np.array([wob_map[phase] + np.random.randn()*300 for phase in Phase_Operation])
+    RPM = np.array([120 + np.random.randn()*10 if phase == 'Drilling' else 50 + np.random.randn()*5 for phase in Phase_Operation])
+    ROP = np.array([10 + 5*np.random.rand() if phase == 'Drilling' else 0 for phase in Phase_Operation])
+    Torque = WOB / 10 + np.random.randn(records)*50
+    Pressure_Standpipe = 3000 + ROP*20 + np.random.randn(records)*100
+    Pressure_Annulus = Pressure_Standpipe - 200 + np.random.randn(records)*50
+    Overbalance = 100 + np.random.randn(records)*20
+    Pressure_Reservoir = 5000 + np.random.randn(records)*300
+    
+    Type_Mud = np.random.choice(mud_types, size=records, p=[0.6, 0.3, 0.1])
+    In_Rate_Flow_Mud = 100 + 10*np.random.randn(records)
+    In_Weight_Mud = 9 + 0.5*np.random.randn(records)
+    In_Temperature_Mud = 40 + 5*np.random.randn(records)
+    Content_Chloride = 500 + 50*np.random.randn(records)
+    Content_Solid = 10 + 5*np.random.randn(records)
+    pH_Mud = 7 + np.random.randn(records)*0.5
+    Out_Rate_Flow_Mud = In_Rate_Flow_Mud * (0.95 + 0.05*np.random.rand(records))
+    Volume_Pit = 500 + 100*np.random.randn(records)
+    Out_Temperature_Mud = In_Temperature_Mud - (1 + 0.5*np.random.rand(records))
+    Viscosity = 15 + 5*np.random.randn(records)
+    API_Loss_Fluid = np.clip(0.5 + 0.1*np.random.randn(records), 0, None)
+    Out_Weight_Mud = In_Weight_Mud * (0.95 + 0.05*np.random.rand(records))
+    num_injected = int(records * 0.002)
+    if num_injected > 0:
+        Temperature_Reservoir[:num_injected] = np.random.uniform(86, 100, size=num_injected)
+        Permeability_Formation[:num_injected] = np.random.uniform(5, 29, size=num_injected)
+    
+    Active_Damage = []
+    Type_Damage = []
 
-        df['Clay_Damage_Index'] = clip((df['Clay_Content_Percent'] / 50) * (10 - df['Mud_pH']) * (df['Chloride_Content'] / 20000), 0, 1)
-        df['Emulsion_Risk_Index'] = clip((df['Oil_Water_Ratio'] / 100) * (df['Solid_Content'] / 10), 0, 1)
-        df['Fluid_Loss_Risk_Index'] = clip(df['Fluid_Loss_API'] / 15, 0, 1)
-        df['Rock_Fluid_Interaction_Risk_Index'] = clip((df['Shale_Reactiveness'] + (1 - df['Brittleness_Index'])) / 2, 0, 1)
-
-        df['Formation_Damage_Index'] = clip(
-            0.25 * df['Clay_Damage_Index'] +
-            0.2 * df['Emulsion_Risk_Index'] +
-            0.25 * df['Fluid_Loss_Risk_Index'] +
-            0.3 * df['Rock_Fluid_Interaction_Risk_Index'], 0, 1
-        )
-
-        # Add 5% noise
-        noise_mask = np.random.rand(chunk_len) < 0.05
-        for col in df.select_dtypes(include=[np.number]).columns:
-            noise = np.random.normal(0, 0.1 * df[col].std(), noise_mask.sum())
-            df.loc[noise_mask, col] += noise
-
-        # Add 3% missing data
-        missing_mask = np.random.rand(chunk_len) < 0.03
-        for col in df.select_dtypes(include=[np.number]).columns:
-            df.loc[missing_mask, col] = np.nan
-
-        # Save
-        if first_chunk:
-            df.to_parquet(filename, index=False)
-            first_chunk = False
+    for i in range(records):
+        damage_prob = calc_damage(0.1, Percent_Content_Clay[i], API_Loss_Fluid[i], Fractures_of_Presence[i], API_Loss_Fluid[i])
+        is_damaged = np.random.rand() < damage_prob
+        Active_Damage.append('Yes' if is_damaged else 'No')
+        if is_damaged:
+            row = {
+                'Clay_Content_Percent': Percent_Content_Clay[i],
+                'Clay_Mineralogy_Type': Type_Mineralogy_Clay[i],
+                'Formation_Type': Type_Formation[i],
+                'Fluid_Loss_API': API_Loss_Fluid[i],
+                'Mud_Type': Type_Mud[i],
+                'Chloride_Content': Content_Chloride[i],
+                'Solid_Content': Content_Solid[i],
+                'Completion_Type': Type_Completion[i],
+                'Mud_pH': pH_Mud[i],
+                'Formation_Permeability': Permeability_Formation[i],
+                'Reservoir_Temperature': Temperature_Reservoir[i],
+                'Overbalance': Overbalance[i],
+                'Viscosity': Viscosity[i],
+                'Mud_Weight_In': In_Weight_Mud[i],
+            }
+            Type_Damage.append(determine_damage_type(row))
         else:
-            old_df = pd.read_parquet(filename)
-            combined_df = pd.concat([old_df, df], ignore_index=True)
-            combined_df.to_parquet(filename, index=False)
+            Type_Damage.append("No Damage")
+    
+    df = pd.DataFrame({
+        'Record_ID': ID_Record,
+        'API_Well_ID': ID_Well_API,
+        'LONG': LONG,
+        'LAT': LAT,
+        'DateTime': DateTime,
+        'Days_Age_Well': Days_Age_Well,
+        'Phase_Operation': Phase_Operation,
+        'Formation_Type': Type_Formation,
+        'Clay_Mineralogy_Type': Type_Mineralogy_Clay,
+        'Fractures_Presence': Fractures_of_Presence,
+        'Reservoir_Temperature': Temperature_Reservoir,
+        'Formation_Permeability': Permeability_Formation,
+        'Clay_Content_Percent': Percent_Content_Clay,
+        'Completion_Type': Type_Completion,
+        'Density_Perforation': Density_Perforation,
+        'Depth_Measured': Depth_Measured,
+        'Depth_Bit': Depth_Bit,
+        'Weight_on_Bit': WOB,
+        'RPM': RPM,
+        'ROP': ROP,
+        'Torque': Torque,
+        'Pressure_Standpipe': Pressure_Standpipe,
+        'Pressure_Annulus': Pressure_Annulus,
+        'Overbalance': Overbalance,
+        'Pressure_Reservoir': Pressure_Reservoir,
+        'Mud_Type': Type_Mud,
+        'In_Rate_Flow_Mud': In_Rate_Flow_Mud,
+        'Mud_Weight_In': In_Weight_Mud,
+        'Mud_Temperature_In': In_Temperature_Mud,
+        'Chloride_Content': Content_Chloride,
+        'Solid_Content': Content_Solid,
+        'Mud_pH': pH_Mud,
+        'Out_Rate_Flow_Mud': Out_Rate_Flow_Mud,
+        'Volume_Pit': Volume_Pit,
+        'Mud_Temperature_Out': Out_Temperature_Mud,
+        'Viscosity': Viscosity,
+        'Fluid_Loss_API': API_Loss_Fluid,
+        'Mud_Weight_Out': Out_Weight_Mud,
+        'Active_Damage': Active_Damage,
+        'Type_Damage': Type_Damage
+    })
+    return df
+output_dir = 'well_outputs'
+os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Added chunk rows {chunk_start} to {chunk_end} for well {well_api}")
-    print(f"✅ Saved {filename} for well {well_api}")
+for well_id, long_val, lat_val in wells_info:
+    print(f"Generating data for well {well_id} ...")
+    num_chunks = records_per_well // chunk_size
+    remainder = records_per_well % chunk_size
+
+    file_path = os.path.join(output_dir, f'well_{well_id}.parquet')
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    writer = None
+    record_start = 0
+
+    for chunk_i in range(num_chunks + (1 if remainder > 0 else 0)):
+        current_chunk_size = chunk_size if chunk_i < num_chunks else remainder
+        if current_chunk_size == 0:
+            break
+        print(f"  chunk {chunk_i + 1} / {num_chunks + (1 if remainder > 0 else 0)} size: {current_chunk_size}")
+        df_chunk = generate_data_for_well(well_id, long_val, lat_val, current_chunk_size, record_start)
+        record_start += current_chunk_size
+        table = pa.Table.from_pandas(df_chunk)
+        if writer is None:
+            writer = pq.ParquetWriter(file_path, table.schema, compression='snappy')
+        writer.write_table(table)
+
+    if writer is not None:
+        writer.close()
+
+print("Data generation and saving done.")
