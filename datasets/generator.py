@@ -5,7 +5,7 @@ np.random.seed(42)
 
 n_wells = 10
 n_rows_per_well = 15_552_000
-chunk_size = 1_000_000  # اندازه چانک
+chunk_size = 1_000_000
 start_time = pd.Timestamp("2023-01-01")
 
 wells = [
@@ -35,9 +35,8 @@ for well_id in range(n_wells):
     well_lat = well['LAT']
 
     filename = f"formation_damage_well_{well_id+1}.parquet"
-    first_chunk = True  # برای ذخیره‌سازی اولیه یا الحاق
+    first_chunk = True
 
-    # پردازش در چانک‌های کوچکتر
     for chunk_start in range(0, n_rows_per_well, chunk_size):
         chunk_end = min(chunk_start + chunk_size, n_rows_per_well)
         chunk_len = chunk_end - chunk_start
@@ -89,6 +88,10 @@ for well_id in range(n_wells):
             'Rock_Fluid_Interaction_Risk_Index': np.nan
         })
 
+        df['Standpipe_Pressure'] += 0.1 * df['ROP']
+        df['Mud_Temperature_In'] += 0.05 * df['ROP']
+        df['Mud_Temperature_Out'] += 0.07 * df['RPM']
+        df['Pore_Pressure_psi'] += 0.05 * df['WOB']
         df['Overbalance'] = df['Standpipe_Pressure'] - df['Pore_Pressure_psi']
 
         df['Clay_Damage_Index'] = clip((df['Clay_Content_Percent'] / 50) * (10 - df['Mud_pH']) * (df['Chloride_Content'] / 20000), 0, 1)
@@ -103,17 +106,25 @@ for well_id in range(n_wells):
             0.3 * df['Rock_Fluid_Interaction_Risk_Index'], 0, 1
         )
 
-        # ذخیره به صورت الحاقی
+        # Add 5% noise
+        noise_mask = np.random.rand(chunk_len) < 0.05
+        for col in df.select_dtypes(include=[np.number]).columns:
+            noise = np.random.normal(0, 0.1 * df[col].std(), noise_mask.sum())
+            df.loc[noise_mask, col] += noise
+
+        # Add 3% missing data
+        missing_mask = np.random.rand(chunk_len) < 0.03
+        for col in df.select_dtypes(include=[np.number]).columns:
+            df.loc[missing_mask, col] = np.nan
+
+        # Save
         if first_chunk:
             df.to_parquet(filename, index=False)
             first_chunk = False
         else:
-            # پارکت امکان append مستقیم ندارد، پس باید راه‌حل زیر را استفاده کنیم:
-            # ۱) بارگذاری فایل قبلی
-            # ۲) اضافه کردن داده جدید به آن
-            # ۳) ذخیره مجدد (اگر حجم خیلی بزرگ بود، باید از دیتابیس یا فرمت دیگری استفاده کنید)
             old_df = pd.read_parquet(filename)
             combined_df = pd.concat([old_df, df], ignore_index=True)
             combined_df.to_parquet(filename, index=False)
+
         print(f"Added chunk rows {chunk_start} to {chunk_end} for well {well_api}")
-    print(f"Saved {filename} for well {well_api}")
+    print(f"✅ Saved {filename} for well {well_api}")
